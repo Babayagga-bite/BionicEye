@@ -1,10 +1,10 @@
 # BionicEye
 
-A high-resolution bionic eye project using Raspberry Pi Pico.
+A high-resolution bionic eye project using Raspberry Pi Pico w.
 
 ## Components
 
-- Raspberry Pi Pico
+- Raspberry Pi Pico w
 - Camera module (Arducam Mini 2MP Plus OV2640)
 - Electrodes for electrical stimulation
 - Driver for electrodes (L293D or transistors)
