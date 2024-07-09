@@ -20,3 +20,6 @@ Follow the [setup instructions](setup_instructions.md) to assemble and configure
 
 This project is licensed under the Hardware License Agreement. See the [LICENSE](LICENSE) file for details.
 
+##Support
+
+For any support to the project, bitcoin donations: bc1qqpe79vjsxh8c2g2g8l78jkrpsf6du0lnlak40q
