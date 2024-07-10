@@ -1,82 +1,85 @@
-from camera_driver import Camera
-from electrodes_driver import Electrodes
-from ble_driver import BionicEyeBLE
-import network
-import ubluetooth
-from time import sleep
 
-# Configurar la cámara
-camera = Camera(i2c_scl=5, i2c_sda=4, spi_sck=18, spi_mosi=19, spi_miso=20)
+import bluetooth
+import time
+from electrodes_driver import Electrodes
+import os
+import subprocess
 
 # Configurar los electrodos
 electrodes = Electrodes(pin1=2, pin2=3)
 
-# Configurar Bluetooth
-ble = BionicEyeBLE()
+def generate_stimulation_from_file(file_content):
+    # Interpreta el contenido del archivo y genera estímulos eléctricos
+    for line in file_content.splitlines():
+        command, duration = line.split(',')
+        duration = float(duration)
+        if command == 'activate':
+            electrodes.activate_stimulus()
+        elif command == 'deactivate':
+            electrodes.deactivate_stimulus()
+        time.sleep(duration)
 
-# Configurar WiFi
-wlan = network.WLAN(network.STA_IF)
-wlan.active(True)
+def receive_file(sock):
+    file_data = b''
+    while True:
+        data = sock.recv(1024)
+        if not data:
+            break
+        file_data += data
+    return file_data.decode()
 
-# Configurar Bluetooth
-ble = ubluetooth.BLE()
-ble.active(True)
+def detect_wifi_signals():
+    # Usa la herramienta 'iwlist' para escanear las redes WiFi cercanas
+    result = subprocess.run(['iwlist', 'scan'], capture_output=True, text=True)
+    return result.stdout
 
-def on_rx(v):
-    print("Received via Bluetooth:", v)
+def detect_bluetooth_signals():
+    # Usa la herramienta 'hcitool' para escanear dispositivos Bluetooth cercanos
+    result = subprocess.run(['hcitool', 'scan'], capture_output=True, text=True)
+    return result.stdout
 
-ble.irq(handler=lambda e: on_rx(ble.read().decode('utf-8')))
+def generate_visual_pattern_from_signals(wifi_data, bluetooth_data):
+    # Genera un patrón visual basado en los datos de señales WiFi y Bluetooth
+    pattern = f"WiFi Signals: {wifi_data}\nBluetooth Signals: {bluetooth_data}"
+    return pattern
 
-# Funciones de control de electrodos
-def activate_stimulus():
-    electrodes.activate_stimulus()
+def main():
+    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+    port = 1
+    server_sock.bind(("", port))
+    server_sock.listen(1)
 
-def deactivate_stimulus():
-    electrodes.deactivate_stimulus()
+    print("Waiting for connection on RFCOMM channel %d" % port)
+    client_sock, client_info = server_sock.accept()
+    print("Accepted connection from ", client_info)
 
-# Captura y procesamiento de imagen mejorado
-def capture_and_process_image():
-    # Capturar y procesar la imagen
-    camera.capture_image()
-    
-    # Procesamiento avanzado para determinar la intensidad de luz
-    light_intensity = camera.calculate_average_light_intensity()
-    
-    # Generar patrón de estimulación basado en la intensidad de luz
-    generate_stimulation_pattern(light_intensity)
+    while True:
+        try:
+            command = client_sock.recv(1024).decode()
+            if command == 'C':
+                print("Calibrating system...")
+                # Implementar la calibración aquí
+            elif command == 'P':
+                print("Capturing and processing image...")
+                # Implementar la captura y procesamiento de imagen aquí
+            elif command == 'F':
+                print("Receiving file...")
+                file_content = receive_file(client_sock)
+                print("File received. Generating stimulation pattern...")
+                generate_stimulation_from_file(file_content)
+            elif command == 'S':
+                print("Scanning for signals...")
+                wifi_data = detect_wifi_signals()
+                bluetooth_data = detect_bluetooth_signals()
+                visual_pattern = generate_visual_pattern_from_signals(wifi_data, bluetooth_data)
+                # Enviar el patrón visual al cerebro (electrodos)
+                generate_stimulation_from_file(visual_pattern)
+        except Exception as e:
+            print(f"Error: {e}")
+            break
 
-# Generar patrón de estimulación según la intensidad de luz
-def generate_stimulation_pattern(intensity):
-    # Ajustar los parámetros de estimulación según la intensidad de luz
-    if intensity > 128:
-        activate_stimulus()
-    else:
-        deactivate_stimulus()
+    client_sock.close()
+    server_sock.close()
 
-# Ciclo principal
-while True:
-    # Capturar señales WiFi y Bluetooth
-    wifi_signals, bt_signals = wlan.scan(), ble.gap_scan(1000, 30000, 30000)
-    print("WiFi Signals:", wifi_signals)
-    print("Bluetooth Signals:", bt_signals)
-    
-    # Enviar señal Bluetooth de listo
-    ble.send(b'Ready')
-    
-    # Leer comando recibido por Bluetooth
-    command = ble.ble.gatts_read(0).decode()
-    
-    # Procesar comando recibido
-    if command == 'C':
-        # Activar y desactivar estimulación durante 1 segundo
-        for _ in range(10):
-            activate_stimulus()
-            sleep(0.1)
-            deactivate_stimulus()
-            sleep(0.1)
-    elif command == 'P':
-        # Capturar y procesar imagen
-        capture_and_process_image()
-    
-    # Esperar 1 segundo antes de continuar al siguiente ciclo
-    sleep(1)
+if __name__ == '__main__':
+    main()
