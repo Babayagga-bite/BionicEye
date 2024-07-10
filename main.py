@@ -1,85 +1,104 @@
-
 import bluetooth
 import time
-from electrodes_driver import Electrodes
-import os
-import subprocess
+import cv2
+import numpy as np
 
-# Configurar los electrodos
-electrodes = Electrodes(pin1=2, pin2=3)
+def find_bionic_eye():
+    target_name = "BionicEye"
+    nearby_devices = bluetooth.discover_devices()
 
-def generate_stimulation_from_file(file_content):
-    # Interpreta el contenido del archivo y genera estímulos eléctricos
-    for line in file_content.splitlines():
-        command, duration = line.split(',')
-        duration = float(duration)
-        if command == 'activate':
-            electrodes.activate_stimulus()
-        elif command == 'deactivate':
-            electrodes.deactivate_stimulus()
-        time.sleep(duration)
+    for bdaddr in nearby_devices:
+        if target_name == bluetooth.lookup_name(bdaddr):
+            return bdaddr
+    return None
 
-def receive_file(sock):
-    file_data = b''
+def connect_bionic_eye(address):
+    port = 1
+    sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+    sock.connect((address, port))
+    return sock
+
+def send_command(sock, command):
+    sock.send(command)
+    time.sleep(1)
+    data = sock.recv(1024)
+    print(f"Response: {data.decode()}")
+
+def calibrate_system(sock):
+    print("Calibrating system...")
+    send_command(sock, 'C')
+
+def capture_and_process_image(sock):
+    print("Capturing and processing image...")
+    send_command(sock, 'P')
+    time.sleep(2)  # Esperar tiempo suficiente para que se procese la imagen en el dispositivo
+    image_data = b''
     while True:
-        data = sock.recv(1024)
-        if not data:
+        chunk = sock.recv(1024)
+        if not chunk:
             break
-        file_data += data
-    return file_data.decode()
+        image_data += chunk
+    display_image(image_data)
 
-def detect_wifi_signals():
-    # Usa la herramienta 'iwlist' para escanear las redes WiFi cercanas
-    result = subprocess.run(['iwlist', 'scan'], capture_output=True, text=True)
-    return result.stdout
+def send_file(sock, filename):
+    print(f"Sending file '{filename}' to BionicEye...")
+    sock.send(b'F')  # Indicar al dispositivo que se enviará un archivo
+    time.sleep(1)
+    with open(filename, 'rb') as f:
+        data = f.read()
+        sock.send(data)
+        time.sleep(1)
+    print("File transfer completed.")
 
-def detect_bluetooth_signals():
-    # Usa la herramienta 'hcitool' para escanear dispositivos Bluetooth cercanos
-    result = subprocess.run(['hcitool', 'scan'], capture_output=True, text=True)
-    return result.stdout
+def scan_signals(sock):
+    print("Scanning for signals...")
+    send_command(sock, 'S')
+    time.sleep(5)  # Esperar tiempo suficiente para que se completen las exploraciones
+    data = sock.recv(4096).decode()
+    print("Signals detected:
+", data)
 
-def generate_visual_pattern_from_signals(wifi_data, bluetooth_data):
-    # Genera un patrón visual basado en los datos de señales WiFi y Bluetooth
-    pattern = f"WiFi Signals: {wifi_data}\nBluetooth Signals: {bluetooth_data}"
-    return pattern
+def display_image(image_data):
+    nparr = np.frombuffer(image_data, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    cv2.imshow('Captured Image', img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def main():
-    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-    port = 1
-    server_sock.bind(("", port))
-    server_sock.listen(1)
+    address = find_bionic_eye()
+    if not address:
+        print("Could not find BionicEye device")
+        return
 
-    print("Waiting for connection on RFCOMM channel %d" % port)
-    client_sock, client_info = server_sock.accept()
-    print("Accepted connection from ", client_info)
+    sock = connect_bionic_eye(address)
+    print("Connected to BionicEye")
 
     while True:
-        try:
-            command = client_sock.recv(1024).decode()
-            if command == 'C':
-                print("Calibrating system...")
-                # Implementar la calibración aquí
-            elif command == 'P':
-                print("Capturing and processing image...")
-                # Implementar la captura y procesamiento de imagen aquí
-            elif command == 'F':
-                print("Receiving file...")
-                file_content = receive_file(client_sock)
-                print("File received. Generating stimulation pattern...")
-                generate_stimulation_from_file(file_content)
-            elif command == 'S':
-                print("Scanning for signals...")
-                wifi_data = detect_wifi_signals()
-                bluetooth_data = detect_bluetooth_signals()
-                visual_pattern = generate_visual_pattern_from_signals(wifi_data, bluetooth_data)
-                # Enviar el patrón visual al cerebro (electrodos)
-                generate_stimulation_from_file(visual_pattern)
-        except Exception as e:
-            print(f"Error: {e}")
-            break
+        print("
+Options:")
+        print("1. Calibrate System")
+        print("2. Capture and Process Image")
+        print("3. Send File to BionicEye")
+        print("4. Scan for Signals")
+        print("5. Exit")
+        choice = input("Choose an option: ")
 
-    client_sock.close()
-    server_sock.close()
+        if choice == '1':
+            calibrate_system(sock)
+        elif choice == '2':
+            capture_and_process_image(sock)
+        elif choice == '3':
+            filename = input("Enter the filename to send: ")
+            send_file(sock, filename)
+        elif choice == '4':
+            scan_signals(sock)
+        elif choice == '5':
+            sock.close()
+            print("Connection closed.")
+            break
+        else:
+            print("Invalid choice. Please try again.")
 
 if __name__ == '__main__':
     main()
