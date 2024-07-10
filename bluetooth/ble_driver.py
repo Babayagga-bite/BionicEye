@@ -1,25 +1,18 @@
-import ubluetooth
+import bluetooth
 
 class BionicEyeBLE:
     def __init__(self):
-        self.ble = ubluetooth.BLE()
-        self.ble.active(True)
-        self.ble.irq(self.ble_irq)
-        self.advertise()
-        self.conn_handle = None
+        self.sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
 
-    def ble_irq(self, event, data):
-        if event == 1:  # Central conectado
-            self.conn_handle, _, _ = data
-        elif event == 2:  # Central desconectado
-            self.conn_handle = None
-            self.advertise()
-
-    def advertise(self):
-        name = b'BionicEye'
-        self.ble.gap_advertise(100, name)
+    def connect(self, address):
+        port = 1
+        self.sock.connect((address, port))
 
     def send(self, data):
-        if self.conn_handle is not None:
-            self.ble.gatts_notify(self.conn_handle, 0, data)
+        self.sock.send(data)
 
+    def receive(self, buffer_size=1024):
+        return self.sock.recv(buffer_size)
+
+    def close(self):
+        self.sock.close()
