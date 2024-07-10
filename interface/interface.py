@@ -35,11 +35,20 @@ def capture_and_process_image(sock):
 
 def send_file(sock, filename):
     print(f"Sending file '{filename}' to BionicEye...")
+    sock.send(b'F')  # Indicar al dispositivo que se enviará un archivo
+    time.sleep(1)
     with open(filename, 'rb') as f:
         data = f.read()
         sock.send(data)
         time.sleep(1)
     print("File transfer completed.")
+
+def scan_signals(sock):
+    print("Scanning for signals...")
+    send_command(sock, 'S')
+    time.sleep(5)  # Esperar tiempo suficiente para que se completen las exploraciones
+    data = sock.recv(4096).decode()
+    print("Signals detected:\n", data)
 
 def display_image(image_data):
     nparr = np.frombuffer(image_data, np.uint8)
@@ -62,7 +71,8 @@ def main():
         print("1. Calibrate System")
         print("2. Capture and Process Image")
         print("3. Send File to BionicEye")
-        print("4. Exit")
+        print("4. Scan for Signals")
+        print("5. Exit")
         choice = input("Choose an option: ")
 
         if choice == '1':
@@ -80,6 +90,8 @@ def main():
             filename = input("Enter the filename to send: ")
             send_file(sock, filename)
         elif choice == '4':
+            scan_signals(sock)
+        elif choice == '5':
             sock.close()
             print("Connection closed.")
             break
