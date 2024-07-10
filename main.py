@@ -2,6 +2,9 @@ import bluetooth
 import time
 import cv2
 import numpy as np
+from camera_driver import Camera
+from electrodes_driver import Electrodes
+from ble_driver import BionicEyeBLE
 
 def find_bionic_eye():
     target_name = "BionicEye"
@@ -13,50 +16,42 @@ def find_bionic_eye():
     return None
 
 def connect_bionic_eye(address):
-    port = 1
-    sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-    sock.connect((address, port))
-    return sock
+    ble = BionicEyeBLE()
+    ble.connect(address)
+    return ble
 
-def send_command(sock, command):
-    sock.send(command)
+def send_command(ble, command):
+    ble.send(command.encode())
     time.sleep(1)
-    data = sock.recv(1024)
+    data = ble.receive(1024)
     print(f"Response: {data.decode()}")
 
-def calibrate_system(sock):
+def calibrate_system(ble):
     print("Calibrating system...")
-    send_command(sock, 'C')
+    send_command(ble, 'C')
 
-def capture_and_process_image(sock):
+def capture_and_process_image(ble, camera):
     print("Capturing and processing image...")
-    send_command(sock, 'P')
-    time.sleep(2)  # Esperar tiempo suficiente para que se procese la imagen en el dispositivo
-    image_data = b''
-    while True:
-        chunk = sock.recv(1024)
-        if not chunk:
-            break
-        image_data += chunk
+    send_command(ble, 'P')
+    image_data = camera.capture_image()
     display_image(image_data)
 
-def send_file(sock, filename):
+def send_file(ble, filename):
     print(f"Sending file '{filename}' to BionicEye...")
-    sock.send(b'F')  # Indicar al dispositivo que se enviará un archivo
+    send_command(ble, 'F')  # Indicar al dispositivo que se enviará un archivo
     time.sleep(1)
     with open(filename, 'rb') as f:
         data = f.read()
-        sock.send(data)
+        ble.send(data)
         time.sleep(1)
     print("File transfer completed.")
 
-def scan_signals(sock):
+def scan_signals(ble):
     print("Scanning for signals...")
-    send_command(sock, 'S')
+    send_command(ble, 'S')
     time.sleep(5)  # Esperar tiempo suficiente para que se completen las exploraciones
-    data = sock.recv(4096).decode()
-    print("Signals detected:
-", data)
+    data = ble.receive(4096).decode()
+    print("Signals detected:\n", data)
 
 def display_image(image_data):
     nparr = np.frombuffer(image_data, np.uint8)
@@ -71,12 +66,13 @@ def main():
         print("Could not find BionicEye device")
         return
 
-    sock = connect_bionic_eye(address)
+    ble = connect_bionic_eye(address)
+    camera = Camera(i2c_scl=5, i2c_sda=4, spi_sck=18, spi_mosi=19, spi_miso=20)
+    electrodes = Electrodes(pin1=2, pin2=3)
     print("Connected to BionicEye")
 
     while True:
-        print("
-Options:")
+        print("\nOptions:")
         print("1. Calibrate System")
         print("2. Capture and Process Image")
         print("3. Send File to BionicEye")
@@ -85,16 +81,17 @@ Options:")
         choice = input("Choose an option: ")
 
         if choice == '1':
-            calibrate_system(sock)
+            calibrate_system(ble)
         elif choice == '2':
-            capture_and_process_image(sock)
+            capture_and_process_image(ble, camera)
         elif choice == '3':
             filename = input("Enter the filename to send: ")
-            send_file(sock, filename)
+            send_file(ble, filename)
         elif choice == '4':
-            scan_signals(sock)
+            scan_signals(ble)
         elif choice == '5':
-            sock.close()
+            ble.close()
+            camera.release()
             print("Connection closed.")
             break
         else:
